@@ -28,7 +28,7 @@ OWNER_ID = 204541083
 CHANNEL_ID = "@your_channel"  # Замените на нужный ID или @username канала
 # -------------------------------------------------------------
 
-# Стадии диалога
+# Стадии диалога:
 # CHOOSING_PRODUCT – выбор товара из меню;
 # WAITING_PHONE_NAME – ввод телефона и имени;
 # WAITING_ADDRESS – ввод адреса доставки;
@@ -36,7 +36,7 @@ CHANNEL_ID = "@your_channel"  # Замените на нужный ID или @us
 CHOOSING_PRODUCT, WAITING_PHONE_NAME, WAITING_ADDRESS, CONFIRM_ORDER = range(4)
 
 # Каталог товаров – 24 продукта с английскими названиями.
-# Текст кнопок формируется из поля "name" (например, "1. Bombshell 💖")
+# Текст кнопок формируется из поля "name" (например, "1. Bombshell 💖").
 products = {
     "1": {
         "name": "1. Bombshell 💖",
@@ -160,9 +160,9 @@ products = {
     },
 }
 
-# Функция для генерации меню товаров на определённой странице
+# Функция для генерации меню товаров на нужной странице с навигацией
 def get_product_menu(page: int) -> InlineKeyboardMarkup:
-    # Сортируем товары по номеру (ключ)
+    # Сортируем товары по ключу (номер продукта)
     sorted_products = sorted(products.items(), key=lambda x: int(x[0]))
     per_page = 4  # 4 товара на страницу
     total_pages = (len(sorted_products) + per_page - 1) // per_page
@@ -173,35 +173,33 @@ def get_product_menu(page: int) -> InlineKeyboardMarkup:
     keyboard = []
     for prod_id, prod in current_products:
         btn = InlineKeyboardButton(text=prod["name"], callback_data=f"PRODUCT_{prod_id}")
-        keyboard.append([btn])  # каждая кнопка в отдельном ряду
-    
-    # Добавляем навигационные кнопки
+        keyboard.append([btn])  # Каждая кнопка в отдельном ряду
+
+    # Навигационные кнопки
     nav_buttons = []
     if page > 1:
-        nav_buttons.append(InlineKeyboardButton("◀️", callback_data=f"PAGE_{page - 1}"))
-    # На первой странице только вправо; на остальных – обе стрелки, если есть следующая страница
+        nav_buttons.append(InlineKeyboardButton("◀️ Назад", callback_data=f"PAGE_{page - 1}"))
     if page < total_pages:
-        nav_buttons.append(InlineKeyboardButton("▶️", callback_data=f"PAGE_{page + 1}"))
+        nav_buttons.append(InlineKeyboardButton("Далі ▶️", callback_data=f"PAGE_{page + 1}"))
     if nav_buttons:
         keyboard.append(nav_buttons)
-    
+        
     return InlineKeyboardMarkup(keyboard)
 
 # ------------------------- Обработчики ConversationHandler -------------------------
 
 def start_command(update: Update, context: CallbackContext) -> int:
     """
-    Выводит приветственное сообщение с картинкой и меню товаров первой страницы.
+    Выводит приветственное сообщение с красивым текстом и картинкой, а также меню товаров первой страницы.
     """
     chat_id = update.effective_chat.id
     welcome_text = (
-        "🌟 Вітаємо у світі розкоші та краси Victoria's Secret! 🌟\n\n"
-        "Тут ви знайдете оригінальні парфумовані лосьйони та креми з США, які дарують неповторні відчуття та догляд за шкірою.\n"
-        "Обирайте товар, який вам подобається, та дізнайтеся більше! 💖"
+        "🌟 Ласкаво просимо до Victoria's Secret! 🌟\n\n"
+        "Відкрийте для себе розкішний асортимент оригінальних парфумованих лосьйонів та кремів з США. "
+        "Наші продукти допоможуть вам відчути справжню красу і догляд, який ви заслуговуєте!\n\n"
+        "Оберіть свій ідеальний товар нижче:"
     )
-    # Сохраняем текущую страницу
     context.user_data["current_page"] = 1
-    # Отправляем фото приветствия с inline-клавиатурой меню товаров (страница 1)
     welcome_image = "https://i.ibb.co/cS9WCwrJ/photo-2025-04-14-01-23-29.jpg"
     context.bot.send_photo(
         chat_id=chat_id,
@@ -213,14 +211,13 @@ def start_command(update: Update, context: CallbackContext) -> int:
 
 def page_handler(update: Update, context: CallbackContext) -> int:
     """
-    Обрабатывает нажатия навигационных стрелок и обновляет меню товаров.
+    Обрабатывает нажатия навигационных кнопок (PAGE_<номер>) и обновляет меню товаров.
     """
     query = update.callback_query
     query.answer()
-    data = query.data  # Ожидается формат "PAGE_<номер>"
+    data = query.data  # Формат "PAGE_<номер>"
     page = int(data.split("_")[1])
     context.user_data["current_page"] = page
-    # Редактируем клавиатуру сообщения, если возможно; иначе отправляем новое сообщение.
     try:
         query.edit_message_reply_markup(reply_markup=get_product_menu(page))
     except Exception:
@@ -229,17 +226,35 @@ def page_handler(update: Update, context: CallbackContext) -> int:
 
 def back_to_menu_handler(update: Update, context: CallbackContext) -> int:
     """
-    Обрабатывает нажатие кнопки "Назад ↩️" и выводит меню товаров для текущей страницы (без картинки).
+    Обрабатывает нажатие кнопки "⬅️ Назад" в карточке товара и возвращает пользователя в приветственное сообщение
+    с картинкой и меню товаров той же страницы.
     """
     query = update.callback_query
     query.answer()
     page = context.user_data.get("current_page", 1)
-    query.message.reply_text("Оберіть товар:", reply_markup=get_product_menu(page))
+    # Удаляем текущее сообщение с карточкой товара и отправляем заново приветствие
+    try:
+        query.message.delete()
+    except Exception:
+        pass
+    welcome_text = (
+        "🌟 Ласкаво просимо до Victoria's Secret! 🌟\n\n"
+        "Відкрийте для себе розкішний асортимент оригінальних парфумованих лосьйонів та кремів з США. "
+        "Наші продукти допоможуть вам відчути справжню красу і догляд!\n\n"
+        "Оберіть свій ідеальний товар нижче:"
+    )
+    welcome_image = "https://i.ibb.co/cS9WCwrJ/photo-2025-04-14-01-23-29.jpg"
+    context.bot.send_photo(
+        chat_id=query.message.chat_id,
+        photo=welcome_image,
+        caption=welcome_text,
+        reply_markup=get_product_menu(page)
+    )
     return CHOOSING_PRODUCT
 
 def select_product(update: Update, context: CallbackContext) -> int:
     """
-    Обрабатывает выбор товара (callback data "PRODUCT_<id>") и выводит подробное описание с кнопками "Замовити" и "Назад".
+    Обрабатывает выбор товара (callback data "PRODUCT_<id>") и выводит подробное описание с кнопками "Замовити 🛍" и "⬅️ Назад".
     """
     query = update.callback_query
     query.answer()
@@ -256,10 +271,10 @@ def select_product(update: Update, context: CallbackContext) -> int:
             f"{product['description']}\n\n"
             "Натисніть «Замовити 🛍», щоб оформити замовлення!"
         )
-        # Клавиатура с двумя кнопками: "Замовити" и "Назад"
+        # Клавиатура: "Замовити 🛍" и "⬅️ Назад"
         keyboard = [[
             InlineKeyboardButton("Замовити 🛍", callback_data=f"ORDER_{prod_id}"),
-            InlineKeyboardButton("Назад ↩️", callback_data="BACK_TO_MENU")
+            InlineKeyboardButton("⬅️ Назад", callback_data="BACK_TO_MENU")
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         chat_id = query.message.chat_id
@@ -305,7 +320,7 @@ def order_product(update: Update, context: CallbackContext) -> int:
 
 def get_phone_name(update: Update, context: CallbackContext) -> int:
     """
-    Сохраняет номер телефона и имя, затем запрашивает адрес доставки.
+    Сохраняет телефон и имя, затем запрашивает адрес доставки.
     """
     user_input = update.message.text.strip()
     context.user_data["phone_name"] = user_input
@@ -424,13 +439,13 @@ def cancel_order(update: Update, context: CallbackContext) -> int:
 
 def cancel_command(update: Update, context: CallbackContext) -> int:
     """
-    Команда /cancel для завершения диалога.
+    Команда /cancel для завершення діалогу.
     """
     update.message.reply_text("❌ Ви скасували оформлення замовлення.", reply_markup=ReplyKeyboardRemove())
     context.user_data.clear()
     return ConversationHandler.END
 
-# ------------------------- Адмін-команды -------------------------
+# ------------------------- Адмін-команди -------------------------
 
 def admin_help(update: Update, context: CallbackContext):
     user = update.effective_user
