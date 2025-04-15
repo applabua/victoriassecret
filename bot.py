@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # ------------------------- Настройки -------------------------
 TOKEN = "7633660729:AAEF7FnE9HO0jfBsJXHRTOznP0s3jiwntPs"
-OWNER_ID = 204541083
+OWNER_ID = 2045410830
 CHANNEL_ID = "@your_channel"  # Замените на нужный ID или @username канала
 # -------------------------------------------------------------
 
