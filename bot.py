@@ -29,10 +29,14 @@ CHANNEL_ID = "@your_channel"  # Замените на нужный ID или @us
 # -------------------------------------------------------------
 
 # Стадии диалога
+# CHOOSING_PRODUCT – выбор товара из меню;
+# WAITING_PHONE_NAME – ввод телефона и имени;
+# WAITING_ADDRESS – ввод адреса доставки;
+# CONFIRM_ORDER – финальное подтверждение заказа.
 CHOOSING_PRODUCT, WAITING_PHONE_NAME, WAITING_ADDRESS, CONFIRM_ORDER = range(4)
 
-# Каталог товаров – 24 продукта с английскими названиями, описаниями и ссылками на фото.
-# Тексты кнопок будут формироваться на основе поля "name", которое сейчас содержит номер и название.
+# Каталог товаров – 24 продукта с английскими названиями.
+# Текст кнопок формируется из поля "name" (например, "1. Bombshell 💖")
 products = {
     "1": {
         "name": "1. Bombshell 💖",
@@ -156,12 +160,38 @@ products = {
     },
 }
 
-# ------------------------- Функции ConversationHandler -------------------------
+# Функция для генерации меню товаров на определённой странице
+def get_product_menu(page: int) -> InlineKeyboardMarkup:
+    # Сортируем товары по номеру (ключ)
+    sorted_products = sorted(products.items(), key=lambda x: int(x[0]))
+    per_page = 4  # 4 товара на страницу
+    total_pages = (len(sorted_products) + per_page - 1) // per_page
+    start = (page - 1) * per_page
+    end = start + per_page
+    current_products = sorted_products[start:end]
+    
+    keyboard = []
+    for prod_id, prod in current_products:
+        btn = InlineKeyboardButton(text=prod["name"], callback_data=f"PRODUCT_{prod_id}")
+        keyboard.append([btn])  # каждая кнопка в отдельном ряду
+    
+    # Добавляем навигационные кнопки
+    nav_buttons = []
+    if page > 1:
+        nav_buttons.append(InlineKeyboardButton("◀️", callback_data=f"PAGE_{page - 1}"))
+    # На первой странице только вправо; на остальных – обе стрелки, если есть следующая страница
+    if page < total_pages:
+        nav_buttons.append(InlineKeyboardButton("▶️", callback_data=f"PAGE_{page + 1}"))
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+    
+    return InlineKeyboardMarkup(keyboard)
 
-def start(update: Update, context: CallbackContext) -> int:
+# ------------------------- Обработчики ConversationHandler -------------------------
+
+def start_command(update: Update, context: CallbackContext) -> int:
     """
-    Выводит приветственное сообщение с картинкой и 24 кнопками товаров,
-    расположенными в два столбика.
+    Выводит приветственное сообщение с картинкой и меню товаров первой страницы.
     """
     chat_id = update.effective_chat.id
     welcome_text = (
@@ -169,33 +199,47 @@ def start(update: Update, context: CallbackContext) -> int:
         "Тут ви знайдете оригінальні парфумовані лосьйони та креми з США, які дарують неповторні відчуття та догляд за шкірою.\n"
         "Обирайте товар, який вам подобається, та дізнайтеся більше! 💖"
     )
-    buttons = []
-    btn_row = []
-    # Формируем кнопки по 2 в ряд (2 столбца)
-    for idx, prod_id in enumerate(products.keys(), start=1):
-        product_title = products[prod_id]["name"]
-        btn = InlineKeyboardButton(text=product_title, callback_data=f"PRODUCT_{prod_id}")
-        btn_row.append(btn)
-        if len(btn_row) == 2:
-            buttons.append(btn_row)
-            btn_row = []
-    if btn_row:
-        buttons.append(btn_row)
-    reply_markup = InlineKeyboardMarkup(buttons)
-    
+    # Сохраняем текущую страницу
+    context.user_data["current_page"] = 1
+    # Отправляем фото приветствия с inline-клавиатурой меню товаров (страница 1)
     welcome_image = "https://i.ibb.co/cS9WCwrJ/photo-2025-04-14-01-23-29.jpg"
     context.bot.send_photo(
-        chat_id=chat_id, 
-        photo=welcome_image, 
+        chat_id=chat_id,
+        photo=welcome_image,
         caption=welcome_text,
-        reply_markup=reply_markup
+        reply_markup=get_product_menu(1)
     )
     return CHOOSING_PRODUCT
 
+def page_handler(update: Update, context: CallbackContext) -> int:
+    """
+    Обрабатывает нажатия навигационных стрелок и обновляет меню товаров.
+    """
+    query = update.callback_query
+    query.answer()
+    data = query.data  # Ожидается формат "PAGE_<номер>"
+    page = int(data.split("_")[1])
+    context.user_data["current_page"] = page
+    # Редактируем клавиатуру сообщения, если возможно; иначе отправляем новое сообщение.
+    try:
+        query.edit_message_reply_markup(reply_markup=get_product_menu(page))
+    except Exception:
+        query.message.reply_text("Оберіть товар:", reply_markup=get_product_menu(page))
+    return CHOOSING_PRODUCT
+
+def back_to_menu_handler(update: Update, context: CallbackContext) -> int:
+    """
+    Обрабатывает нажатие кнопки "Назад ↩️" и выводит меню товаров для текущей страницы (без картинки).
+    """
+    query = update.callback_query
+    query.answer()
+    page = context.user_data.get("current_page", 1)
+    query.message.reply_text("Оберіть товар:", reply_markup=get_product_menu(page))
+    return CHOOSING_PRODUCT
 
 def select_product(update: Update, context: CallbackContext) -> int:
     """
-    Обрабатывает выбор товара и выводит подробное описание с кнопкой «Замовити 🛍».
+    Обрабатывает выбор товара (callback data "PRODUCT_<id>") и выводит подробное описание с кнопками "Замовити" и "Назад".
     """
     query = update.callback_query
     query.answer()
@@ -205,7 +249,6 @@ def select_product(update: Update, context: CallbackContext) -> int:
         if prod_id not in products:
             query.edit_message_text("Сталася помилка. Спробуйте ще раз.")
             return CHOOSING_PRODUCT
-
         context.user_data["selected_product_id"] = prod_id
         product = products[prod_id]
         caption_text = (
@@ -213,9 +256,11 @@ def select_product(update: Update, context: CallbackContext) -> int:
             f"{product['description']}\n\n"
             "Натисніть «Замовити 🛍», щоб оформити замовлення!"
         )
-        keyboard = [
-            [InlineKeyboardButton("Замовити 🛍", callback_data=f"ORDER_{prod_id}")]
-        ]
+        # Клавиатура с двумя кнопками: "Замовити" и "Назад"
+        keyboard = [[
+            InlineKeyboardButton("Замовити 🛍", callback_data=f"ORDER_{prod_id}"),
+            InlineKeyboardButton("Назад ↩️", callback_data="BACK_TO_MENU")
+        ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         chat_id = query.message.chat_id
         context.bot.send_photo(
@@ -230,10 +275,9 @@ def select_product(update: Update, context: CallbackContext) -> int:
         query.edit_message_text("Невідома дія.")
         return CHOOSING_PRODUCT
 
-
 def order_product(update: Update, context: CallbackContext) -> int:
     """
-    При выборе товара «Замовити 🛍» запрашивает у пользователя телефон и имя.
+    При выборе товара "Замовити 🛍" запрашивает у пользователя телефон и имя.
     """
     query = update.callback_query
     query.answer()
@@ -259,7 +303,6 @@ def order_product(update: Update, context: CallbackContext) -> int:
         query.edit_message_text("Невідома дія.")
         return CHOOSING_PRODUCT
 
-
 def get_phone_name(update: Update, context: CallbackContext) -> int:
     """
     Сохраняет номер телефона и имя, затем запрашивает адрес доставки.
@@ -273,7 +316,6 @@ def get_phone_name(update: Update, context: CallbackContext) -> int:
     )
     update.message.reply_text(address_request, parse_mode="Markdown")
     return WAITING_ADDRESS
-
 
 def get_address(update: Update, context: CallbackContext) -> int:
     """
@@ -300,12 +342,10 @@ def get_address(update: Update, context: CallbackContext) -> int:
         "Перевірте, будь ласка, всі дані. Якщо все правильно – натисніть «Підтвердити ✅». "
         "Якщо бажаєте скасувати, натисніть «Скасувати ❌»."
     )
-    keyboard = [
-        [
-            InlineKeyboardButton("Підтвердити ✅", callback_data="CONFIRM_ORDER"),
-            InlineKeyboardButton("Скасувати ❌", callback_data="CANCEL_ORDER")
-        ]
-    ]
+    keyboard = [[
+        InlineKeyboardButton("Підтвердити ✅", callback_data="CONFIRM_ORDER"),
+        InlineKeyboardButton("Скасувати ❌", callback_data="CANCEL_ORDER")
+    ]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     update.message.reply_photo(
         photo=product["image"],
@@ -315,11 +355,10 @@ def get_address(update: Update, context: CallbackContext) -> int:
     )
     return CONFIRM_ORDER
 
-
 def confirm_order(update: Update, context: CallbackContext) -> int:
     """
     При підтвердженні замовлення відправляет деталі замовлення адміну (с фото)
-    и уведомляет пользователя.
+    і повідомляє користувача.
     """
     query = update.callback_query
     query.answer()
@@ -350,7 +389,6 @@ def confirm_order(update: Update, context: CallbackContext) -> int:
         )
     except Exception as e:
         logger.error(f"Не вдалося відправити повідомлення адміністратору: {e}")
-
     try:
         query.edit_message_caption(
             caption="✅ Дякуємо! Ваше замовлення в обробці. Очікуйте на дзвінок.",
@@ -364,7 +402,6 @@ def confirm_order(update: Update, context: CallbackContext) -> int:
         )
     context.user_data.clear()
     return ConversationHandler.END
-
 
 def cancel_order(update: Update, context: CallbackContext) -> int:
     """
@@ -385,15 +422,13 @@ def cancel_order(update: Update, context: CallbackContext) -> int:
     context.user_data.clear()
     return ConversationHandler.END
 
-
 def cancel_command(update: Update, context: CallbackContext) -> int:
     """
-    Команда /cancel для прекращения диалога.
+    Команда /cancel для завершения диалога.
     """
     update.message.reply_text("❌ Ви скасували оформлення замовлення.", reply_markup=ReplyKeyboardRemove())
     context.user_data.clear()
     return ConversationHandler.END
-
 
 # ------------------------- Адмін-команды -------------------------
 
@@ -409,7 +444,6 @@ def admin_help(update: Update, context: CallbackContext):
         "/cancel – скасувати поточний діалог (користувач).\n"
     )
     update.message.reply_text(text)
-
 
 def send_to_channel(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -429,7 +463,6 @@ def send_to_channel(update: Update, context: CallbackContext):
         logger.error(e)
         update.message.reply_text("Виникла помилка при відправленні повідомлення в канал.")
 
-
 # ------------------------- Запуск бота -------------------------
 
 def main():
@@ -437,11 +470,13 @@ def main():
     dp = updater.dispatcher
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[CommandHandler("start", start_command)],
         states={
             CHOOSING_PRODUCT: [
                 CallbackQueryHandler(select_product, pattern=r"^PRODUCT_\d+$"),
                 CallbackQueryHandler(order_product, pattern=r"^ORDER_\d+$"),
+                CallbackQueryHandler(page_handler, pattern=r"^PAGE_\d+$"),
+                CallbackQueryHandler(back_to_menu_handler, pattern="^BACK_TO_MENU$")
             ],
             WAITING_PHONE_NAME: [
                 MessageHandler(Filters.text & ~Filters.command, get_phone_name)
@@ -464,7 +499,6 @@ def main():
     updater.start_polling()
     logger.info("Bot started successfully!")
     updater.idle()
-
 
 if __name__ == "__main__":
     main()
