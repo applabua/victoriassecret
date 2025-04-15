@@ -28,12 +28,10 @@ OWNER_ID = 2045410830
 CHANNEL_ID = "@your_channel"  # Замените на нужный ID или @username канала
 # -------------------------------------------------------------
 
-# Определяем стадии ConversationHandler:
-# 0 - Выбор товара; 1 - Ввод телефона и имени; 2 - Ввод адресных данных (населений пункт, область и отделение почты);
-# 3 - Финальное подтверждение заказа.
+# Стадии диалога
 CHOOSING_PRODUCT, WAITING_PHONE_NAME, WAITING_ADDRESS, CONFIRM_ORDER = range(4)
 
-# Каталог товаров – 24 продукта с именами, описаниями и ссылками на фото
+# Каталог товаров – 24 позиции, каждый продукт имеет название, описание и ссылку на фото.
 products = {
     "1": {
         "name": "Зволожуючий крем Bombshell 💖",
@@ -157,11 +155,11 @@ products = {
     },
 }
 
-# ------------------------- Функции Conversation -------------------------
+# ------------------------- Функции ConversationHandler -------------------------
 
 def start(update: Update, context: CallbackContext) -> int:
     """
-    Выводит приветственное сообщение с картинкой и 24 кнопками товаров.
+    Выводит приветственное сообщение с картинкой и 24 кнопками товаров (каждая кнопка в отдельном ряду).
     """
     chat_id = update.effective_chat.id
     welcome_text = (
@@ -169,19 +167,11 @@ def start(update: Update, context: CallbackContext) -> int:
         "Тут ви знайдете оригінальні парфумовані лосьйони та креми з США, які дарують неповторні відчуття та догляд за шкірою.\n"
         "Обирайте товар, який вам подобається, та дізнайтеся більше! 💖"
     )
-
     buttons = []
-    row = []
-    # Создаём 24 кнопки (3 в ряд)
-    for idx, prod_id in enumerate(products.keys(), start=1):
+    for prod_id in products.keys():
         product_title = products[prod_id]["name"]
         btn = InlineKeyboardButton(text=product_title, callback_data=f"PRODUCT_{prod_id}")
-        row.append(btn)
-        if idx % 3 == 0:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
+        buttons.append([btn])  # Каждая кнопка в отдельном ряду
     reply_markup = InlineKeyboardMarkup(buttons)
     
     welcome_image = "https://i.ibb.co/cS9WCwrJ/photo-2025-04-14-01-23-29.jpg"
@@ -196,11 +186,10 @@ def start(update: Update, context: CallbackContext) -> int:
 
 def select_product(update: Update, context: CallbackContext) -> int:
     """
-    Обрабатывает выбор товара по кнопке "PRODUCT_{id}" и выводит подробное описание с кнопкой "Замовити 🛍".
+    Обрабатывает выбор товара и выводит подробное описание с кнопкой «Замовити 🛍».
     """
     query = update.callback_query
     query.answer()
-
     data = query.data
     if data.startswith("PRODUCT_"):
         prod_id = data.split("_")[1]
@@ -215,7 +204,6 @@ def select_product(update: Update, context: CallbackContext) -> int:
             f"{product['description']}\n\n"
             "Натисніть «Замовити 🛍», щоб оформити замовлення!"
         )
-
         keyboard = [
             [InlineKeyboardButton("Замовити 🛍", callback_data=f"ORDER_{prod_id}")]
         ]
@@ -236,11 +224,10 @@ def select_product(update: Update, context: CallbackContext) -> int:
 
 def order_product(update: Update, context: CallbackContext) -> int:
     """
-    При натисканні "Замовити 🛍" запрашивает у пользователя номер телефона и имя.
+    При выборе товара «Замовити 🛍» запрашивает у пользователя телефон и имя.
     """
     query = update.callback_query
     query.answer()
-
     data = query.data
     if data.startswith("ORDER_"):
         prod_id = data.split("_")[1]
@@ -249,7 +236,6 @@ def order_product(update: Update, context: CallbackContext) -> int:
             query.edit_message_reply_markup(reply_markup=None)
         except Exception:
             pass
-
         phone_request = (
             "📱 Будь ласка, введіть ваш **номер телефону** та **ім'я**.\n\n"
             "Наприклад: `+380 99 123 45 67, Олена`"
@@ -267,16 +253,14 @@ def order_product(update: Update, context: CallbackContext) -> int:
 
 def get_phone_name(update: Update, context: CallbackContext) -> int:
     """
-    Получаем от пользователя телефон и имя, затем запрашиваем адрес доставки.
+    Сохраняет номер телефона и имя, затем запрашивает адрес доставки.
     """
     user_input = update.message.text.strip()
     context.user_data["phone_name"] = user_input
 
     address_request = (
-        "📍 Вкажіть, будь ласка, населений пункт та область.\n"
-        "Наприклад: Київ, Київська область\n\n"
-        "🏤 Будь ласка, напишіть номер відділення Нової Пошти або Укрпошти.\n"
-        "Наприклад: Нова Пошта, відділення №42"
+        "🏤 Введіть, будь ласка, населений пункт, область, номер відділення Нової Пошти або Укрпошти.\n"
+        "Наприклад: Київ, Київська область, Нова Пошта, відділення №42"
     )
     update.message.reply_text(address_request, parse_mode="Markdown")
     return WAITING_ADDRESS
@@ -284,8 +268,7 @@ def get_phone_name(update: Update, context: CallbackContext) -> int:
 
 def get_address(update: Update, context: CallbackContext) -> int:
     """
-    Получаем у пользователя адрес доставки (нас. пункт, область та відділення).
-    Формируем итоговое сообщение с данными заказа.
+    Получает адрес доставки от пользователя и формирует итоговое сообщение с данными заказа.
     """
     user_input = update.message.text.strip()
     context.user_data["address"] = user_input
@@ -308,7 +291,6 @@ def get_address(update: Update, context: CallbackContext) -> int:
         "Перевірте, будь ласка, всі дані. Якщо все правильно – натисніть «Підтвердити ✅». "
         "Якщо бажаєте скасувати, натисніть «Скасувати ❌»."
     )
-
     keyboard = [
         [
             InlineKeyboardButton("Підтвердити ✅", callback_data="CONFIRM_ORDER"),
@@ -327,11 +309,10 @@ def get_address(update: Update, context: CallbackContext) -> int:
 
 def confirm_order(update: Update, context: CallbackContext) -> int:
     """
-    При підтвердженні замовлення – надсилаємо дані замовлення адміну (з фото) і повідомляємо користувача.
+    При підтвердженні замовлення відправляет деталі замовлення адміну (с фото) и уведомляет пользователя.
     """
     query = update.callback_query
     query.answer()
-
     user_data = context.user_data
     prod_id = user_data.get("selected_product_id")
     product = products.get(prod_id, {})
@@ -351,7 +332,6 @@ def confirm_order(update: Update, context: CallbackContext) -> int:
         f"ID користувача: {user.id}\n"
     )
     try:
-        # Отправляем админу фото с данными заказа
         context.bot.send_photo(
             chat_id=OWNER_ID,
             photo=product.get("image"),
@@ -398,7 +378,7 @@ def cancel_order(update: Update, context: CallbackContext) -> int:
 
 def cancel_command(update: Update, context: CallbackContext) -> int:
     """
-    Команда /cancel для прерывания диалога.
+    Команда /cancel для прекращения диалога.
     """
     update.message.reply_text("❌ Ви скасували оформлення замовлення.", reply_markup=ReplyKeyboardRemove())
     context.user_data.clear()
