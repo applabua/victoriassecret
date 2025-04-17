@@ -480,7 +480,7 @@ def send_to_channel(update: Update, context: CallbackContext):
         update.message.reply_text("Будь ласка, введіть текст після команди /send_to_channel")
         return
     message_text = " ".join(context.args)
-    button = InlineKeyboardButton("Підписатися ➡️", url="https://t.me/YOUR_BOT_USERNAME")
+    button = InlineKeyboardButton("Замовити🌸", url="https://t.me/@victoriassecret_shop_bot")
     markup = InlineKeyboardMarkup([[button]])
     try:
         context.bot.send_message(chat_id=CHANNEL_ID, text=message_text, reply_markup=markup)
